@@ -1,76 +1,80 @@
 const express = require('express')
-const mongoose = require('mongoose')
 const cors = require('cors')
+const model = require('./model')
 const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
+require('dotenv').config();
 
-mongoose.connect('mongodb://localhost:27017/crud-example')
-
-
-const schema = new mongoose.Schema(
-    {
-        username : String,
-        password : String
-    }
-)
-
-const model = new mongoose.model("users", schema)
+const PORT = 4700;
 
 const app = express();
-app.use(cors())
-app.use(express.json())
+app.use(cors());
+app.use(express.json());
 
-const PORT = 5678;
+function generateToken(payload){
+    const token = jwt.sign({payload }, process.env.JWT_SECRET )
+    return token
+}
 
-app.get('/',(req,res)=>{
-    res.json({ msg: "Server is hosting successfully..." })
-})
+function decoder(token){
+    const decoder = jwt.verify(token, process.env.JWT_SECRET);
+    console.log(decoder);
+}
 
 app.post('/register',(req,res)=>{
-    const { username , password} = req.body;
+    const {name , email , age , password} = req.body;
 
-    bcrypt.hash(password , 10)
-    .then(hashedpassword => {
-        return model.create({
-            username,
-            password : hashedpassword
-        })
+    model.findOne({ email })
+    .then(user =>{
+        if(user){
+            res.status(404).json({msg : "Email id already found"})
+        }
+        else{
+            bcrypt.hash(password , 10)
+            .then(hashedpassword => {
+                return model.create({
+                    name,
+                    age,
+                    email,
+                    password : hashedpassword
+                })
+            })
+
+            .then(users => res.json(users))
+            .catch(err => res.json(err))
+            
+        }
     })
-    
-    .then(users => res.json(users))
-    .catch(err => res.json(err))
 })
 
-app.post('/login',(req,res)=>{
-    const { username , password } = req.body;
+app.post('/login', (req,res)=>{
+    const {email , password } = req.body;
 
-    model.findOne({username})
+    model.findOne({ email })
     .then(user => {
         if(!user){
-            res.status(400).json({msg:"username not found"})
+            res.status(404).json({msg : "Email ID is not found"})
         }
-        bcrypt.compare(password , user.password)
-        .then(isMatch => {
-                if(!isMatch){
-                res.status(401).json({msg : "invalid password"})
-            }
-            else{
-                res.json({
-                    msg : "login successfully",
-                    user: {
-                        id : user._id,
-                        username : user.username
-
-                    }
-                })
-            }
-        })
-
-        
-
+        else{
+            bcrypt.compare(password , user.password)
+            .then(password => {
+                if(!password){
+                    res.status(404).json({msg : "Invalid user credintials"})
+                }
+                else{
+                    const payload = user.id;
+                    const token = generateToken(payload)
+                    decoder(token)
+                    res.status(200).json({
+                        msg : "Log In successfully..",
+                        token : token
+                    })
+                }
+            })
+        }
     })
 })
 
-
-app.listen(PORT , (req,res)=>{
-    console.log("server is running at htpp://localhost:",PORT);
+app.listen(PORT, (req,res)=>{
+    console.log("Server is running at ", PORT);
 })
